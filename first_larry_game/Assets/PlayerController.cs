@@ -4,6 +4,10 @@ using UnityEngine.InputSystem; // new Input System
 [RequireComponent(typeof(Rigidbody))]
 public class PlayerController : MonoBehaviour
 {
+    [Header("Jump Tuning")]
+    public float fallMultiplier = 2.5f;       // Faster fall
+    public float lowJumpMultiplier = 2f;      // Short hop control
+
     [Header("Movement")]
     public float moveSpeed = 6f;
     public float maxGroundSpeed = 8f;
@@ -84,7 +88,7 @@ public class PlayerController : MonoBehaviour
     void FixedUpdate()
     {
         // Horizontal movement: preserve vertical velocity
-        Vector3 horizontalVel = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+        Vector3 horizontalVel = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
         Vector3 desiredVel = inputDirection * moveSpeed;
 
         Vector3 velChange = desiredVel - horizontalVel;
@@ -92,17 +96,17 @@ public class PlayerController : MonoBehaviour
 
         // Clamp horizontal speed
         Vector3 clampedHorizontal = new Vector3(
-            Mathf.Clamp(rb.velocity.x, -maxGroundSpeed, maxGroundSpeed),
+            Mathf.Clamp(rb.linearVelocity.x, -maxGroundSpeed, maxGroundSpeed),
             0f,
-            Mathf.Clamp(rb.velocity.z, -maxGroundSpeed, maxGroundSpeed)
+            Mathf.Clamp(rb.linearVelocity.z, -maxGroundSpeed, maxGroundSpeed)
         );
-        rb.velocity = new Vector3(clampedHorizontal.x, rb.velocity.y, clampedHorizontal.z);
+        rb.linearVelocity = new Vector3(clampedHorizontal.x, rb.linearVelocity.y, clampedHorizontal.z);
 
         // Ground drag
         if (IsGrounded())
         {
-            Vector3 slowed = new Vector3(rb.velocity.x, 0, rb.velocity.z) * Mathf.Max(0f, 1f - groundDrag * Time.fixedDeltaTime);
-            rb.velocity = new Vector3(slowed.x, rb.velocity.y, slowed.z);
+            Vector3 slowed = new Vector3(rb.linearVelocity.x, 0, rb.linearVelocity.z) * Mathf.Max(0f, 1f - groundDrag * Time.fixedDeltaTime);
+            rb.linearVelocity = new Vector3(slowed.x, rb.linearVelocity.y, slowed.z);
         }
 
         // Jump handling with buffer + coyote
@@ -119,7 +123,7 @@ public class PlayerController : MonoBehaviour
         bool grounded = IsGrounded();
 
         // Reset jumps only *once* when we newly touch the ground
-        if (grounded && jumpsLeft < maxJumps && rb.velocity.y <= 0f)
+        if (grounded && jumpsLeft < maxJumps && rb.linearVelocity.y <= 0f)
         {
             jumpsLeft = maxJumps;
         }
@@ -128,13 +132,25 @@ public class PlayerController : MonoBehaviour
         if (grounded)
             lastGroundedTime = Time.time;
 
+        // --- Better gravity & variable jump height ---
+        if (rb.linearVelocity.y < 0)
+        {
+            // Falling: apply stronger gravity for snappier descent
+            rb.AddForce(Vector3.up * Physics.gravity.y * (fallMultiplier - 1f) * rb.mass);
+        }
+        else if (rb.linearVelocity.y > 0 && (Keyboard.current == null || !Keyboard.current.spaceKey.isPressed))
+        {
+            // Jump key released early → shorter hop
+            rb.AddForce(Vector3.up * Physics.gravity.y * (lowJumpMultiplier - 1f) * rb.mass);
+        }
+
     }
 
     void DoJump()
     {
-        Vector3 vel = rb.velocity;
+        Vector3 vel = rb.linearVelocity;
         vel.y = 0f;
-        rb.velocity = vel;
+        rb.linearVelocity = vel;
         rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
         jumpsLeft = Mathf.Max(0, jumpsLeft - 1);
     }
