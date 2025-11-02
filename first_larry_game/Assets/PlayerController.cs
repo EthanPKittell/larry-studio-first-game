@@ -10,7 +10,9 @@ public class PlayerController : MonoBehaviour
 
     [Header("Movement")]
     public float moveSpeed = 6f;
+    public float sprintMultiplier = 2f;       // Sprint speed multiplier
     public float maxGroundSpeed = 8f;
+    public float maxSprintSpeed = 16f;        // Max speed when sprinting
     public float groundDrag = 5f;
 
     [Header("Jump")]
@@ -29,6 +31,8 @@ public class PlayerController : MonoBehaviour
     private int jumpsLeft;
     private float lastGroundedTime = -10f;
     private float lastJumpPressedTime = -10f;
+    private bool isSprinting = false;
+    private bool wasSprintingOnGround = false;
 
     void Awake()
     {
@@ -54,11 +58,27 @@ public class PlayerController : MonoBehaviour
             float up    = Keyboard.current.wKey.isPressed ? 1f : 0f;
             float down  = Keyboard.current.sKey.isPressed ? 1f : 0f;
             move = new Vector2(right - left, up - down);
+
+            // Sprint input (Left Shift) - only allow sprint to START on ground
+            bool sprintInput = Keyboard.current.leftShiftKey.isPressed;
+            
+            if (IsGrounded())
+            {
+                // On ground: allow sprint state to change freely
+                isSprinting = sprintInput;
+                wasSprintingOnGround = isSprinting;
+            }
+            else
+            {
+                // In air: can only continue sprinting if we started on ground
+                isSprinting = sprintInput && wasSprintingOnGround;
+            }
         }
         else
         {
             // fallback (rare) if Keyboard.current is null; won't throw old-API exception
             move = Vector2.zero;
+            isSprinting = false;
         }
 
         // --- Camera-relative movement ---
@@ -66,7 +86,7 @@ public class PlayerController : MonoBehaviour
         Vector3 camForward = cam.forward;
         Vector3 camRight = cam.right;
 
-        // flatten so camera pitch doesn’t tilt movement
+        // flatten so camera pitch doesn't tilt movement
         camForward.y = 0f;
         camRight.y = 0f;
         camForward.Normalize();
@@ -75,7 +95,7 @@ public class PlayerController : MonoBehaviour
         inputDirection = (camRight * move.x + camForward * move.y).normalized;
 
 
-        // Jump input detection (buffer) — spacebar
+        // Jump input detection (buffer) – spacebar
         if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
         {
             lastJumpPressedTime = Time.time;
@@ -87,18 +107,22 @@ public class PlayerController : MonoBehaviour
 
     void FixedUpdate()
     {
+        // Calculate current move speed based on sprint state
+        float currentMoveSpeed = isSprinting ? moveSpeed * sprintMultiplier : moveSpeed;
+        float currentMaxSpeed = isSprinting ? maxSprintSpeed : maxGroundSpeed;
+
         // Horizontal movement: preserve vertical velocity
         Vector3 horizontalVel = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
-        Vector3 desiredVel = inputDirection * moveSpeed;
+        Vector3 desiredVel = inputDirection * currentMoveSpeed;
 
         Vector3 velChange = desiredVel - horizontalVel;
         rb.AddForce(new Vector3(velChange.x, 0f, velChange.z), ForceMode.VelocityChange);
 
         // Clamp horizontal speed
         Vector3 clampedHorizontal = new Vector3(
-            Mathf.Clamp(rb.linearVelocity.x, -maxGroundSpeed, maxGroundSpeed),
+            Mathf.Clamp(rb.linearVelocity.x, -currentMaxSpeed, currentMaxSpeed),
             0f,
-            Mathf.Clamp(rb.linearVelocity.z, -maxGroundSpeed, maxGroundSpeed)
+            Mathf.Clamp(rb.linearVelocity.z, -currentMaxSpeed, currentMaxSpeed)
         );
         rb.linearVelocity = new Vector3(clampedHorizontal.x, rb.linearVelocity.y, clampedHorizontal.z);
 
